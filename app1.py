@@ -1,29 +1,84 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 import auth
+import os
+
+
 # -------------------- PAGE SETUP --------------------
-st.set_page_config(page_title="SkillBot Interest Profile", layout="centered")
-# -------------------- LOGIN / SIGNUP --------------------
+st.set_page_config(page_title="SkillBot Interest Profiler", layout="centered")
+# -------------------- RESPONSES FILE SETUP --------------------
+RESPONSES_FILE = "responses/responses.xlsx"
+os.makedirs("responses", exist_ok=True)
+# -------------------- SESSION --------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+if "index" not in st.session_state:
+    st.session_state.index = 0
+if "answers" not in st.session_state:
+    st.session_state.answers = []
+# -------------------- NAVBAR --------------------
+col1, col2 = st.columns([0.8,0.2])
+with col1:
+    st.title("🔹 SkillBot Interest Profiler")
+with col2:
+    if not st.session_state.logged_in:
+        if st.button("Register"):
+            st.session_state.show_register = True
+            st.session_state.show_login = False
+        if st.button("Sign In"):
+            st.session_state.show_login = True
+            st.session_state.show_register = False
+    else:
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.answers = []
+            st.session_state.index = 0
+            st.session_state.page = "home"
+            st.stop()
 
-if not st.session_state.logged_in:
-    st.title("🔐 SkillBot Login / Signup")
-
-    option = st.radio("Choose an option:", ["Login", "Signup"])
-    username = st.text_input("Username")
+if st.session_state.get("show_register", False):
+    st.subheader("Register Now")
+    email = st.text_input("Email")
     password = st.text_input("Password", type="password")
+    confirm = st.text_input("Confirm Password", type="password")
+    if st.button("Register Account"):
+        if password != confirm:
+            st.error("Passwords do not match")
+        elif auth.signup(email, password):
+            st.success("Registration successful! Please Sign In now")
+            # Switch to login form automatically
+            st.session_state.show_register = False
+            st.session_state.show_login = True
+            st.stop()  # re-render to show login form
+        else:
+            st.error("Email already exists!")
 
-    if option == "Login":
-        if st.button("Login"):
-            if auth.login(username, password):
-                st.rerun()
 
-    elif option == "Signup":
-        if st.button("Sign Up"):
-            auth.signup(username, password)
 
-    st.stop()  # Stop app until login
+elif st.session_state.get("show_login", False):
+    st.subheader("Sign In")
+
+    # Keep input values after rerun
+    if "login_email" not in st.session_state:
+        st.session_state.login_email = ""
+    if "login_password" not in st.session_state:
+        st.session_state.login_password = ""
+
+    st.session_state.login_email = st.text_input("Email", value=st.session_state.login_email)
+    st.session_state.login_password = st.text_input("Password", type="password", value=st.session_state.login_password)
+
+    if st.button("Login"):
+        if auth.login(st.session_state.login_email, st.session_state.login_password):
+            st.session_state.logged_in = True
+            st.session_state.show_login = False
+            st.session_state.page = "intro"      # go to Intro page after login
+            st.session_state.username = st.session_state.login_email
+            st.stop()             # reload the page immediately
+        else:
+            st.error("Invalid credentials")
 
 
 # -------------------- LOAD DATA --------------------
@@ -49,6 +104,22 @@ def next_question(selected):
     st.session_state.index += 1
     if st.session_state.index >= len(questions):
         st.session_state.page = "results"
+def save_responses():
+    df = questions.copy()
+    df["answer"] = st.session_state.answers
+    df["username"] = st.session_state.get("username")
+    df["email"] = st.session_state.get("email")
+
+    # Save to Excel
+    if os.path.exists(RESPONSES_FILE):
+        existing = pd.read_excel(RESPONSES_FILE)
+        df_to_save = pd.concat([existing, df], ignore_index=True)
+    else:
+        df_to_save = df
+
+    df_to_save.to_excel(RESPONSES_FILE, index=False)
+    st.success("Your responses have been saved successfully!")
+
 
 # -------------------- INTRO PAGE --------------------
 if st.session_state.page == "intro":
@@ -66,14 +137,14 @@ if st.session_state.page == "intro":
     4. Have fun learning and exploring!
     """)
     st.divider()
-    st.subheader("💭 What would you enjoy doing at your dream job?")
+    st.subheader("What would you enjoy doing at your dream job?")
     st.write("""
     You’ll read 30 short work activity descriptions.  
     Picture yourself doing each one and select how much you’d like it.
 
     There are **no right or wrong answers**, and **no need to think about pay or education**—just interest!
     """)
-    if st.button("Start the Profiler"):
+    if st.button(" Start the Profiler"):
         st.session_state.page = "quiz"
 
 # -------------------- QUIZ PAGE --------------------
@@ -86,11 +157,11 @@ elif st.session_state.page == "quiz":
 
     st.write("How much would you enjoy this activity?")
     options = {
-        "Strongly Disagree": "😠",
-        "Disagree": "🙁",
-        "Neutral": "😐",
-        "Agree": "🙂",
-        "Strongly Agree": "🤩"
+        "Strongly Dislike": "😠",
+        "Dislike": "🙁",
+        "Unsure": "😐",
+        "Like": "🙂",
+        "Strongly Like": "🤩"
     }
 
     cols = st.columns(len(options))
@@ -105,32 +176,30 @@ elif st.session_state.page == "results":
     # Calculate RIASEC scores
     df = questions.copy()
     df["answer"] = st.session_state.answers
-
-    # Rating map (fixed indentation)
     rating_map = {
-        "Strongly Disagree": 1,
-        "Disagree": 2,
-        "Neutral": 3,
-        "Agree": 4,
-        "Strongly Agree": 5
+        "Strongly Dislike": 1,
+        "Dislike": 2,
+        "Unsure": 3,
+        "Like": 4,
+        "Strongly Like": 5,
     }
-
     df["score"] = df["answer"].map(rating_map)
-
-    # Handle missing scores safely
-    df["score"].fillna(0, inplace=True)
 
     riasec_scores = df.groupby("category")["score"].mean().sort_values(ascending=False)
     top = riasec_scores.head(3).index.tolist()
+    save_responses()
 
-    st.subheader("What is RIASEC?")
+    st.subheader(" What is RIASEC?")
     st.write("RIASEC stands for **Realistic, Investigative, Artistic, Social, Enterprising, Conventional** — six types of work interests defined by psychologist John Holland.")
 
     st.write("### Your Profile Scores:")
-    cols = st.columns(len(riasec_scores))
-    for i, (cat, val) in enumerate(riasec_scores.items()):
-        cols[i].metric(cat, f"{val:.1f}")
-
+    # Create a bar chart
+    fig, ax = plt.subplots()
+    ax.bar(riasec_scores.index, riasec_scores.values)
+    ax.set_xlabel("RIASEC Categories")
+    ax.set_ylabel("Average Score")
+    ax.set_title("Your RIASEC Interest Profile")
+    st.pyplot(fig)
     st.markdown(f"**Your top interests are:** {', '.join(top)}")
 
     st.divider()
