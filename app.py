@@ -273,8 +273,15 @@ elif choice == "Profile Creation (Hidden)":
                 "education": education,
                 "marksheet_filename": marksheet.name
             }
-            with open(f"{name}_profile.json", "w") as f:
-                json.dump(profile_data, f)
+            # Add scores from session (if available)
+            profile_data["riasec_scores"] = st.session_state.get("riasec_scores", {})
+            profile_data["tci_scores"] = st.session_state.get("tci_scores", {})
+
+            # Save in SQLite database
+            save_profile_to_db(profile_data)
+
+           st.success("✅ Profile saved successfully to database!")
+
 
             st.success("Profile created successfully!")
             st.json(profile_data)
