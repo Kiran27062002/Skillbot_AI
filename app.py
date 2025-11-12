@@ -271,7 +271,6 @@ elif choice == "Profile Creation (Hidden)":
                 "age": age,
                 "gender": gender,
                 "education": education,
-                "school": school,
                 "marksheet_filename": marksheet.name
             }
             with open(f"{name}_profile.json", "w") as f:
