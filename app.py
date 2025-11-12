@@ -31,10 +31,23 @@ def init_db():
     conn.close()
 
 def save_profile_to_db(profile_data):
+    import sqlite3, json
+
     conn = sqlite3.connect("skillbot.db")
     c = conn.cursor()
-    riasec_json = json.dumps(profile_data.get("riasec_scores", {}))
-    tci_json = json.dumps(profile_data.get("tci_scores", {}))
+
+    # Convert pandas objects (like Series or DataFrame) into dicts before saving
+    riasec_scores = profile_data.get("riasec_scores", {})
+    if hasattr(riasec_scores, "to_dict"):
+        riasec_scores = riasec_scores.to_dict()
+
+    tci_scores = profile_data.get("tci_scores", {})
+    if hasattr(tci_scores, "to_dict"):
+        tci_scores = tci_scores.to_dict()
+
+    riasec_json = json.dumps(riasec_scores)
+    tci_json = json.dumps(tci_scores)
+
     c.execute("""
         INSERT INTO users (name, age, gender, education, marksheet_filename, riasec_scores, tci_scores)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -47,8 +60,10 @@ def save_profile_to_db(profile_data):
         riasec_json,
         tci_json
     ))
+
     conn.commit()
     conn.close()
+
 
 def fetch_all_profiles():
     conn = sqlite3.connect("skillbot.db")
