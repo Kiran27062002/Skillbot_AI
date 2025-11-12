@@ -3,7 +3,9 @@ import pandas as pd
 import plotly.express as px
 import sqlite3
 import json
-
+import os
+conn = sqlite3.connect("skillbot.db", check_same_thread=False)
+cursor = conn.cursor()
 # =====================================================
 # PAGE SETUP
 # =====================================================
