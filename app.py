@@ -1,50 +1,130 @@
+# =====================================================
+# 📘 SKILLBOT CAREER & PERSONALITY PROFILER
+# Enhanced with OCR Marks Extraction + Career Suggestions
+# =====================================================
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import sqlite3
 import json
+import os
+from PIL import Image
+import pytesseract
+import re
+from pdf2image import convert_from_path
 
-# -------------------- PAGE SETUP --------------------
+# =====================================================
+# PAGE SETUP
+# =====================================================
 st.set_page_config(page_title="SkillBot Career & Personality Profiler", layout="centered")
 
-# -------------------- LOAD DATA --------------------
+# =====================================================
+# DATABASE SETUP
+# =====================================================
+def init_db():
+    conn = sqlite3.connect("skillbot.db")
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        age INTEGER,
+        gender TEXT,
+        education TEXT,
+        marksheet_filename TEXT,
+        riasec_scores TEXT,
+        tci_scores TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def save_profile_to_db(profile_data):
+    conn = sqlite3.connect("skillbot.db")
+    c = conn.cursor()
+
+    riasec_scores = profile_data.get("riasec_scores", {})
+    if hasattr(riasec_scores, "to_dict"):
+        riasec_scores = riasec_scores.to_dict()
+
+    tci_scores = profile_data.get("tci_scores", {})
+    if hasattr(tci_scores, "to_dict"):
+        tci_scores = tci_scores.to_dict()
+
+    riasec_json = json.dumps(riasec_scores)
+    tci_json = json.dumps(tci_scores)
+
+    c.execute("""
+        INSERT INTO users (name, age, gender, education, marksheet_filename, riasec_scores, tci_scores)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        profile_data["name"],
+        profile_data["age"],
+        profile_data["gender"],
+        profile_data["education"],
+        profile_data["marksheet_filename"],
+        riasec_json,
+        tci_json
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def fetch_all_profiles():
+    conn = sqlite3.connect("skillbot.db")
+    df = pd.read_sql_query("SELECT * FROM users", conn)
+    conn.close()
+    return df
+
+
+# Initialize DB
+init_db()
+
+# =====================================================
+# LOAD DATA
+# =====================================================
 try:
     questions = pd.read_csv("questions.csv")
     careers = pd.read_csv("careers.csv")
     tci_questions = pd.read_csv("tci_questions.csv")
 except FileNotFoundError as e:
-    st.error(f"Error loading data file: {e}. Make sure 'questions.csv', 'careers.csv', and 'tci_questions.csv' are in the correct directory.")
+    st.error(f"Error loading data file: {e}. Make sure CSV files are in the same folder.")
     st.stop()
 
-# -------------------- SESSION STATE --------------------
+# =====================================================
+# SESSION STATE
+# =====================================================
 defaults = {
-    "page": "intro",  # RIASEC internal page flow
-    "index": 0,       # RIASEC question index
-    "answers": [],    # RIASEC answers
-    "tci_page": "intro",  # TCI internal page flow
-    "tci_index": 0,       # TCI question index
-    "tci_answers": [],    # TCI answers
+    "page": "intro",
+    "index": 0,
+    "answers": [],
+    "tci_page": "intro",
+    "tci_index": 0,
+    "tci_answers": [],
     "riasec_scores": None,
     "tci_scores": None,
-    "sidebar_choice": "Home",  # current section
+    "sidebar_choice": "Home",
 }
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-
 def restart_all():
     for key, val in defaults.items():
         st.session_state[key] = val
 
-
-# -------------------- FLOW HELPERS --------------------
+# =====================================================
+# FLOW HELPERS
+# =====================================================
 def next_question(selected):
     st.session_state.answers.append(selected)
     st.session_state.index += 1
     if st.session_state.index >= len(questions):
         st.session_state.page = "riasec_results"
     st.rerun()
-
 
 def next_tci(selected):
     st.session_state.tci_answers.append(selected)
@@ -53,45 +133,88 @@ def next_tci(selected):
         st.session_state.tci_page = "tci_results"
     st.rerun()
 
+# =====================================================
+# OCR AND CAREER SUGGESTION FUNCTIONS
+# =====================================================
+def extract_marks_from_image(file):
+    """Extract subject marks from an uploaded marksheet image or PDF."""
+    marks = {}
+    try:
+        # If PDF → convert to images
+        if file.name.lower().endswith(".pdf"):
+            pages = convert_from_path(file)
+            text = ""
+            for page in pages:
+                text += pytesseract.image_to_string(page)
+        else:
+            img = Image.open(file)
+            text = pytesseract.image_to_string(img)
+
+        # Extract marks: e.g. "Math: 85"
+        pattern = r"([A-Za-z ]+)\s*[:\-]\s*(\d{1,3})"
+        for subject, score in re.findall(pattern, text):
+            marks[subject.strip().title()] = int(score)
+
+        if not marks:
+            marks["Note"] = "No clear marks found — please upload a clearer marksheet."
+    except Exception as e:
+        marks["error"] = str(e)
+    return marks
+
+
+def suggest_fields(riasec_scores, tci_scores, marks):
+    """Suggest career fields based on RIASEC, TCI, and marks."""
+    suggestions = []
+
+    def get(subject):
+        for k, v in marks.items():
+            if subject.lower() in k.lower():
+                return v
+        return 0
+
+    # Heuristic suggestions
+    if get("Math") > 80 and riasec_scores.get("Investigative", 0) >= 3.5:
+        suggestions.append("Engineering / Computer Science / Research")
+
+    if get("Biology") > 75 and riasec_scores.get("Realistic", 0) >= 3.5:
+        suggestions.append("Medical / Healthcare / Biotechnology")
+
+    if get("English") > 75 and riasec_scores.get("Artistic", 0) >= 3.5:
+        suggestions.append("Writing / Design / Communication")
+
+    if get("Social") > 70 and riasec_scores.get("Social", 0) >= 3.5:
+        suggestions.append("Teaching / Counseling / HR")
+
+    if not suggestions:
+        suggestions.append("General Career Options: Business, Administration, or Entrepreneurship")
+
+    return suggestions
 
 # =====================================================
-# MAIN NAVIGATION (Profile Creation hidden)
+# MAIN NAVIGATION
 # =====================================================
 st.sidebar.title("🧭 Navigation")
 sidebar_options = ["Home", "RIASEC Test", "TCI Test", "Dashboard", "Profile Creation (Hidden)"]
 
-# Hide Profile Creation from visible sidebar
 visible_options = [opt for opt in sidebar_options if "Hidden" not in opt]
 
-# If user is already in hidden page, don't reset choice
 if st.session_state.sidebar_choice == "Profile Creation (Hidden)":
     choice = "Profile Creation (Hidden)"
 else:
     selected_index = visible_options.index(st.session_state.sidebar_choice) if st.session_state.sidebar_choice in visible_options else 0
-    st.session_state.sidebar_choice = st.sidebar.radio(
-        "Choose a section:",
-        visible_options,
-        index=selected_index
-    )
+    st.session_state.sidebar_choice = st.sidebar.radio("Choose a section:", visible_options, index=selected_index)
     choice = st.session_state.sidebar_choice
 
-
-
 # =====================================================
-# HOME PAGE
+# HOME
 # =====================================================
 if choice == "Home":
     st.title("🎓 SkillBot Career & Personality Profiler")
-    st.write(
-        """
-        Discover your ideal **career path** and **personality traits** using two scientifically
-        proven models:
-        - **RIASEC (Holland Codes)** → measures your work interests  
-        - **TCI (Temperament & Character Inventory)** → measures your personality
-
-        Take both tests to unlock your personalized dashboard!
-        """
-    )
+    st.write("""
+        Discover your ideal **career path** and **personality traits** using:
+        - **RIASEC (Holland Codes)** → your work interests  
+        - **TCI (Temperament & Character Inventory)** → your personality traits
+    """)
     st.image("https://upload.wikimedia.org/wikipedia/commons/3/3c/Holland_RIASEC_model.png", use_container_width=True)
     if st.button("Start Now ➡️"):
         st.session_state.page = "quiz"
@@ -145,7 +268,6 @@ elif choice == "RIASEC Test":
             df["score"] = df["answer"].map(rating_map)
             riasec_scores = df.groupby("category")["score"].mean().sort_values(ascending=False)
             st.session_state.riasec_scores = riasec_scores
-
             st.bar_chart(riasec_scores)
             top = riasec_scores.head(3).index.tolist()
             st.success(f"Your top RIASEC types are: **{', '.join(top)}**")
@@ -190,10 +312,7 @@ elif choice == "TCI Test":
         df["score"] = df["answer"].map({"T": 1, "F": 0})
         tci_scores = df.groupby("trait")["score"].sum()
         st.session_state.tci_scores = tci_scores
-
-        fig = px.bar(tci_scores, x=tci_scores.index, y=tci_scores.values,
-                     labels={"x": "Trait", "y": "Score"},
-                     title="Temperament and Character Dimensions")
+        fig = px.bar(tci_scores, x=tci_scores.index, y=tci_scores.values, labels={"x": "Trait", "y": "Score"}, title="Temperament and Character Dimensions")
         st.plotly_chart(fig, use_container_width=True)
         st.info("High scores = stronger presence of that trait.")
         if st.button("View Combined Dashboard ➡️"):
@@ -220,22 +339,12 @@ elif choice == "Dashboard":
             st.bar_chart(tci_scores)
 
         st.divider()
-        st.subheader("🧩 Insight Summary")
         top_interest = riasec_scores.idxmax()
         top_trait = tci_scores.idxmax()
+        st.subheader("🧩 Insight Summary")
         st.write(f"Your strongest **career interest** is **{top_interest}**, and your dominant **personality trait** is **{top_trait}**.")
 
-        if top_interest == "Social" and top_trait in ["Cooperativeness", "Reward Dependence"]:
-            st.success("✅ You might excel in people-centered fields such as teaching, healthcare, or counseling.")
-        elif top_interest == "Investigative" and top_trait in ["Persistence", "Self-Directedness"]:
-            st.success("✅ You may thrive in analytical or research careers, like data science or engineering.")
-        elif top_interest == "Artistic" and top_trait in ["Novelty Seeking", "Self-Transcendence"]:
-            st.success("✅ Creative roles such as design, writing, or media could fit your personality.")
-        else:
-            st.info("Use both profiles to guide your exploration — your mix of traits is unique!")
-
-        st.divider()
-        if st.button("✨ Want more personalized results?"):
+        if st.button("✨ Create Your Profile"):
             st.session_state.sidebar_choice = "Profile Creation (Hidden)"
             st.rerun()
 
@@ -244,40 +353,56 @@ elif choice == "Dashboard":
             st.session_state.sidebar_choice = "Home"
             st.rerun()
 
+        st.divider()
+        st.subheader("🗂️ Saved Profiles")
+        profiles = fetch_all_profiles()
+        if not profiles.empty:
+            st.dataframe(profiles)
+        else:
+            st.info("No profiles saved yet.")
+
 # =====================================================
 # PROFILE CREATION (Hidden Tab)
 # =====================================================
 elif choice == "Profile Creation (Hidden)":
     st.title("👤 SkillBot AI - Profile Creation")
-    st.write("Please fill your details and upload your marksheet:")
+    st.write("Please fill in your details and upload your marksheet:")
 
-    # Basic Info
     name = st.text_input("Full Name")
     age = st.number_input("Age", min_value=10, max_value=100)
     gender = st.selectbox("Gender", ["Male", "Female", "Other"])
-
-    # Education Info
     education = st.text_input("Current Class/Grade")
-
-    # Upload marksheet
     marksheet = st.file_uploader("Upload Your Marksheet (PDF or Image)", type=["pdf", "png", "jpg", "jpeg"])
 
     if st.button("Submit Profile"):
         if not name or not age or not gender or not education or not marksheet:
-            st.error("Please fill all fields and upload marksheet")
+            st.error("Please fill all fields and upload marksheet.")
         else:
+            st.info("🔍 Extracting marks from your marksheet... please wait.")
+            marks = extract_marks_from_image(marksheet)
+
+            riasec = st.session_state.get("riasec_scores", {})
+            tci = st.session_state.get("tci_scores", {})
+            suggestions = suggest_fields(riasec, tci, marks)
+
             profile_data = {
                 "name": name,
                 "age": age,
                 "gender": gender,
                 "education": education,
-                "marksheet_filename": marksheet.name
+                "marksheet_filename": marksheet.name,
+                "riasec_scores": riasec,
+                "tci_scores": tci
             }
-            with open(f"{name}_profile.json", "w") as f:
-                json.dump(profile_data, f)
+            save_profile_to_db(profile_data)
 
-            st.success("Profile created successfully!")
-            st.json(profile_data)
-            if st.button("⬅️ Back to Dashboard"):
-                st.session_state.sidebar_choice = "Dashboard"
-                st.rerun()
+            st.success("✅ Profile saved successfully!")
+            st.subheader("📄 Extracted Marks:")
+            st.json(marks)
+            st.subheader("🎯 Suggested Career Fields:")
+            for s in suggestions:
+                st.markdown(f"- {s}")
+
+    if st.button("⬅️ Back to Dashboard"):
+        st.session_state.sidebar_choice = "Dashboard"
+        st.rerun()
