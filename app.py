@@ -141,8 +141,8 @@ def extract_marks_from_image(file):
     marks = {}
     try:
         # If PDF → convert to images
-       img = Image.open(file)
-       text = pytesseract.image_to_string(img)
+        img = Image.open(file)
+        text = pytesseract.image_to_string(img)
 
 
         # Extract marks: e.g. "Math: 85"
