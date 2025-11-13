@@ -141,14 +141,9 @@ def extract_marks_from_image(file):
     marks = {}
     try:
         # If PDF → convert to images
-        if file.name.lower().endswith(".pdf"):
-            pages = convert_from_path(file)
-            text = ""
-            for page in pages:
-                text += pytesseract.image_to_string(page)
-        else:
-            img = Image.open(file)
-            text = pytesseract.image_to_string(img)
+       img = Image.open(file)
+       text = pytesseract.image_to_string(img)
+
 
         # Extract marks: e.g. "Math: 85"
         pattern = r"([A-Za-z ]+)\s*[:\-]\s*(\d{1,3})"
