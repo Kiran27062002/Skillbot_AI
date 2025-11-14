@@ -6,21 +6,34 @@ import json
 import os
 from supabase import create_client, Client
 
-SUPABASE_URL = st.secrets["https://supabase.com/dashboard/project/qbhnfvrqzsmvxggtlxoq/settings/api-keys"]
-SUPABASE_KEY = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiaG5mdnJxenNtdnhnZ3RseG9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMTY4NDUsImV4cCI6MjA3ODY5Mjg0NX0.EQVJqrn5gQy_ofKPY3z8zIR-N8Zv35R9YuJ0xAkXWsA"]
+# ---------------------------
+# Supabase: read from secrets
+# ---------------------------
+# Put these in .streamlit/secrets.toml or Streamlit Cloud secrets:
+# SUPABASE_URL = "https://<your-project>.supabase.co"
+# SUPABASE_KEY = "<anon-key>"
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
 def upload_marksheet(file):
+    """Upload marksheet file to Supabase storage and return public URL."""
     file_bytes = file.read()
     file_path = file.name
 
-    supabase.storage.from_("marksheets").upload(file_path, file_bytes)
-
+    # upload (overwrites if exists). If you want unique names, add timestamp or uuid.
+    supabase.storage.from_("marksheets").upload(file_path, file_bytes, {"content-type": file.type})
     public_url = supabase.storage.from_("marksheets").get_public_url(file_path)
+    # get_public_url returns dict or string depending on client; handle both:
+    if isinstance(public_url, dict) and "publicURL" in public_url:
+        return public_url["publicURL"]
     return public_url
 
+
 # =====================================================
-# DATABASE CONNECTION
+# DATABASE CONNECTION (local SQLite - optional)
 # =====================================================
 conn = sqlite3.connect("skillbot.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -31,12 +44,13 @@ cursor = conn.cursor()
 st.set_page_config(page_title="SkillBot Career & Personality Profiler", layout="centered")
 
 # =====================================================
-# DATABASE SETUP
+# DATABASE SETUP (local SQLite helper - optional)
 # =====================================================
 def init_db():
-    conn = sqlite3.connect("skillbot.db")
-    c = conn.cursor()
-    c.execute("""
+    conn_local = sqlite3.connect("skillbot.db")
+    c = conn_local.cursor()
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
@@ -47,16 +61,15 @@ def init_db():
             riasec_scores TEXT,
             tci_scores TEXT
         )
-    """)
-    conn.commit()
-    conn.close()
+    """
+    )
+    conn_local.commit()
+    conn_local.close()
 
 
 def save_profile_to_db(profile_data):
-    import sqlite3, json
-
-    conn = sqlite3.connect("skillbot.db")
-    c = conn.cursor()
+    conn_local = sqlite3.connect("skillbot.db")
+    c = conn_local.cursor()
 
     # Convert pandas objects (like Series or DataFrame) into dicts before saving
     riasec_scores = profile_data.get("riasec_scores", {})
@@ -70,46 +83,80 @@ def save_profile_to_db(profile_data):
     riasec_json = json.dumps(riasec_scores)
     tci_json = json.dumps(tci_scores)
 
-    c.execute("""
+    c.execute(
+        """
         INSERT INTO users (name, age, gender, education, marksheet_filename, riasec_scores, tci_scores)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        profile_data["name"],
-        profile_data["age"],
-        profile_data["gender"],
-        profile_data["education"],
-        profile_data["marksheet_filename"],
-        riasec_json,
-        tci_json
-    ))
+    """,
+        (
+            profile_data["name"],
+            profile_data["age"],
+            profile_data["gender"],
+            profile_data["education"],
+            profile_data["marksheet_filename"],
+            riasec_json,
+            tci_json,
+        ),
+    )
 
-    conn.commit()
-    conn.close()
+    conn_local.commit()
+    conn_local.close()
 
 
 def fetch_all_profiles():
-    conn = sqlite3.connect("skillbot.db")
-    df = pd.read_sql_query("SELECT * FROM users", conn)
-    conn.close()
+    conn_local = sqlite3.connect("skillbot.db")
+    df = pd.read_sql_query("SELECT * FROM users", conn_local)
+    conn_local.close()
     return df
 
 
-# Initialize DB at startup
+# Initialize local DB
 init_db()
 
+
+# ---------------------------
+# Supabase: save profile
+# ---------------------------
+def save_profile_to_supabase(data):
+    """
+    Insert profile data into Supabase 'profiles' table.
+    Expected 'profiles' table columns:
+      name, age, gender, education, marksheet_url, riasec_scores (jsonb), tci_scores (jsonb)
+    """
+    # Ensure JSON serializable for RIASEC/TCI values
+    riasec = data.get("riasec_scores", {}) or {}
+    tci = data.get("tci_scores", {}) or {}
+
+    payload = {
+        "name": data.get("name"),
+        "age": data.get("age"),
+        "gender": data.get("gender"),
+        "education": data.get("education"),
+        "marksheet_url": data.get("marksheet_url"),
+        "riasec_scores": riasec,
+        "tci_scores": tci,
+    }
+
+    response = supabase.table("profiles").insert(payload).execute()
+    return response
+
+
 # =====================================================
-# LOAD DATA
+# LOAD DATA (questions / careers / tci questions)
 # =====================================================
 try:
     questions = pd.read_csv("questions.csv")
     careers = pd.read_csv("careers.csv")
     tci_questions = pd.read_csv("tci_questions.csv")
 except FileNotFoundError as e:
-    st.error(f"Error loading data file: {e}. Make sure 'questions.csv', 'careers.csv', and 'tci_questions.csv' are in the correct directory.")
+    st.error(
+        f"Error loading data file: {e}. Make sure 'questions.csv', 'careers.csv', and 'tci_questions.csv' are in the correct directory."
+    )
     st.stop()
 
+
 # =====================================================
-# SESSION STATE
+# SESSION STATE DEFAULTS
 # =====================================================
 defaults = {
     "page": "intro",
@@ -122,7 +169,6 @@ defaults = {
     "tci_scores": None,
     "sidebar_choice": "Home",
 }
-
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
@@ -157,7 +203,6 @@ def next_tci(selected):
 # =====================================================
 st.sidebar.title("🧭 Navigation")
 sidebar_options = ["Home", "RIASEC Test", "TCI Test", "Dashboard", "Profile Creation (Hidden)"]
-
 visible_options = [opt for opt in sidebar_options if "Hidden" not in opt]
 
 if st.session_state.sidebar_choice == "Profile Creation (Hidden)":
@@ -173,12 +218,14 @@ else:
 # =====================================================
 if choice == "Home":
     st.title("🎓 SkillBot Career & Personality Profiler")
-    st.write("""
+    st.write(
+        """
         Discover your ideal **career path** and **personality traits** using two scientifically
         proven models:
         - **RIASEC (Holland Codes)** → measures your work interests  
         - **TCI (Temperament & Character Inventory)** → measures your personality
-    """)
+    """
+    )
     st.image("https://upload.wikimedia.org/wikipedia/commons/3/3c/Holland_RIASEC_model.png", use_container_width=True)
 
     if st.button("Start Now ➡️"):
@@ -214,7 +261,7 @@ elif choice == "RIASEC Test":
                 "Disagree": "🙁",
                 "Neutral": "😐",
                 "Agree": "🙂",
-                "Strongly Agree": "🤩"
+                "Strongly Agree": "🤩",
             }
 
             cols = st.columns(len(options))
@@ -232,7 +279,13 @@ elif choice == "RIASEC Test":
         else:
             df = questions.copy()
             df["answer"] = st.session_state.answers
-            rating_map = {"Strongly Disagree": 1, "Disagree": 2, "Neutral": 3, "Agree": 4, "Strongly Agree": 5}
+            rating_map = {
+                "Strongly Disagree": 1,
+                "Disagree": 2,
+                "Neutral": 3,
+                "Agree": 4,
+                "Strongly Agree": 5,
+            }
             df["score"] = df["answer"].map(rating_map)
             riasec_scores = df.groupby("category")["score"].mean().sort_values(ascending=False)
             st.session_state.riasec_scores = riasec_scores
@@ -284,9 +337,13 @@ elif choice == "TCI Test":
         tci_scores = df.groupby("trait")["score"].sum()
         st.session_state.tci_scores = tci_scores
 
-        fig = px.bar(tci_scores, x=tci_scores.index, y=tci_scores.values,
-                     labels={"x": "Trait", "y": "Score"},
-                     title="Temperament and Character Dimensions")
+        fig = px.bar(
+            tci_scores,
+            x=tci_scores.index,
+            y=tci_scores.values,
+            labels={"x": "Trait", "y": "Score"},
+            title="Temperament and Character Dimensions",
+        )
         st.plotly_chart(fig, use_container_width=True)
         st.info("High scores = stronger presence of that trait.")
 
@@ -319,7 +376,9 @@ elif choice == "Dashboard":
         st.subheader("🧩 Insight Summary")
         top_interest = riasec_scores.idxmax()
         top_trait = tci_scores.idxmax()
-        st.write(f"Your strongest **career interest** is **{top_interest}**, and your dominant **personality trait** is **{top_trait}**.")
+        st.write(
+            f"Your strongest **career interest** is **{top_interest}**, and your dominant **personality trait** is **{top_trait}**."
+        )
 
         st.divider()
         if st.button("✨ Want more personalized results?"):
@@ -338,18 +397,6 @@ elif choice == "Dashboard":
             st.dataframe(profiles)
         else:
             st.info("No profiles saved yet.")
-            
-def save_profile_to_supabase(data):
-    response = supabase.table("profiles").insert({
-        "name": data["name"],
-        "age": data["age"],
-        "gender": data["gender"],
-        "education": data["education"],
-        "marksheet_url": data["marksheet_url"],
-        "riasec_scores": data["riasec_scores"],
-        "tci_scores": data["tci_scores"]
-    }).execute()
-    return response
 
 
 # =====================================================
@@ -366,31 +413,47 @@ elif choice == "Profile Creation (Hidden)":
     education = st.text_input("Current Class/Grade")
     marksheet = st.file_uploader("Upload Your Marksheet (PDF or Image)", type=["pdf", "png", "jpg", "jpeg"])
 
-  if st.button("Submit Profile"):
-    if not name or not age or not gender or not education or not marksheet:
-        st.error("Please fill all fields and upload marksheet")
-    else:
-        # Upload marksheet to Supabase Storage
-        marksheet_url = upload_marksheet(marksheet)
+    if st.button("Submit Profile"):
+        if not name or not age or not gender or not education or not marksheet:
+            st.error("Please fill all fields and upload marksheet")
+        else:
+            # Upload marksheet to Supabase Storage
+            try:
+                marksheet_url = upload_marksheet(marksheet)
+            except Exception as e:
+                st.error(f"Error uploading marksheet: {e}")
+                marksheet_url = None
 
-        # Prepare data for database
-        data = {
-            "name": name,
-            "age": age,
-            "gender": gender,
-            "education": education,
-            "marksheet_url": marksheet_url,
-            "riasec_scores": st.session_state.get("riasec_scores", {}),
-            "tci_scores": st.session_state.get("tci_scores", {})
-        }
+            # Prepare data for database
+            data = {
+                "name": name,
+                "age": age,
+                "gender": gender,
+                "education": education,
+                "marksheet_url": marksheet_url,
+                "riasec_scores": st.session_state.get("riasec_scores", {}),
+                "tci_scores": st.session_state.get("tci_scores", {}),
+            }
 
-        # Save to Supabase table
-        save_profile_to_supabase(data)
-
-        st.success("Profile saved successfully to Supabase!")
-        st.json(data)
-
-         
+            # Save to Supabase table
+            try:
+                save_profile_to_supabase(data)
+                # Optionally also save locally
+                save_profile_to_db(
+                    {
+                        "name": name,
+                        "age": age,
+                        "gender": gender,
+                        "education": education,
+                        "marksheet_filename": marksheet.name,
+                        "riasec_scores": st.session_state.get("riasec_scores", {}),
+                        "tci_scores": st.session_state.get("tci_scores", {}),
+                    }
+                )
+                st.success("Profile saved successfully to Supabase!")
+                st.json(data)
+            except Exception as e:
+                st.error(f"Error saving profile to Supabase: {e}")
 
     if st.button("⬅️ Back to Dashboard"):
         st.session_state.sidebar_choice = "Dashboard"
