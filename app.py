@@ -6,6 +6,77 @@ import auth
 # -------------------- PAGE SETUP --------------------
 st.set_page_config(page_title="SkillBot Career & Personality Profiler", layout="centered")
 
+# -------------------- SESSION --------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+if "index" not in st.session_state:
+    st.session_state.index = 0
+if "answers" not in st.session_state:
+    st.session_state.answers = []
+# -------------------- NAVBAR --------------------
+col1, col2 = st.columns([0.8,0.2])
+with col1:
+    st.title("🔹 SkillBot Interest Profiler")
+with col2:
+    if not st.session_state.logged_in:
+        if st.button("Register"):
+            st.session_state.show_register = True
+            st.session_state.show_login = False
+        if st.button("Sign In"):
+            st.session_state.show_login = True
+            st.session_state.show_register = False
+    else:
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.answers = []
+            st.session_state.index = 0
+            st.session_state.page = "home"
+            st.stop()
+
+if st.session_state.get("show_register", False):
+    st.subheader("Register Now")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    confirm = st.text_input("Confirm Password", type="password")
+    if st.button("Register Account"):
+        if password != confirm:
+            st.error("Passwords do not match")
+        elif auth.signup(email, password):
+            st.success("Registration successful! Please Sign In now")
+            # Switch to login form automatically
+            st.session_state.show_register = False
+            st.session_state.show_login = True
+            st.stop()  # re-render to show login form
+        else:
+            st.error("Email already exists!")
+
+
+
+elif st.session_state.get("show_login", False):
+    st.subheader("Sign In")
+
+    # Keep input values after rerun
+    if "login_email" not in st.session_state:
+        st.session_state.login_email = ""
+    if "login_password" not in st.session_state:
+        st.session_state.login_password = ""
+
+    st.session_state.login_email = st.text_input("Email", value=st.session_state.login_email)
+    st.session_state.login_password = st.text_input("Password", type="password", value=st.session_state.login_password)
+
+    if st.button("Login"):
+        if auth.login(st.session_state.login_email, st.session_state.login_password):
+            st.session_state.logged_in = True
+            st.session_state.show_login = False
+            st.session_state.page = "intro"      # go to Intro page after login
+            st.session_state.username = st.session_state.login_email
+            st.stop()             # reload the page immediately
+        else:
+            st.error("Invalid credentials")
+
+
 # -------------------- LOAD DATA --------------------
 try:
     questions = pd.read_csv("questions.csv")
