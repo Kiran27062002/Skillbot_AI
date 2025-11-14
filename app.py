@@ -10,6 +10,14 @@ SUPABASE_URL = st.secrets["https://supabase.com/dashboard/project/qbhnfvrqzsmvxg
 SUPABASE_KEY = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiaG5mdnJxenNtdnhnZ3RseG9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMTY4NDUsImV4cCI6MjA3ODY5Mjg0NX0.EQVJqrn5gQy_ofKPY3z8zIR-N8Zv35R9YuJ0xAkXWsA"]
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+def upload_marksheet(file):
+    file_bytes = file.read()
+    file_path = file.name
+
+    supabase.storage.from_("marksheets").upload(file_path, file_bytes)
+
+    public_url = supabase.storage.from_("marksheets").get_public_url(file_path)
+    return public_url
 
 # =====================================================
 # DATABASE CONNECTION
@@ -330,6 +338,18 @@ elif choice == "Dashboard":
             st.dataframe(profiles)
         else:
             st.info("No profiles saved yet.")
+            
+def save_profile_to_supabase(data):
+    response = supabase.table("profiles").insert({
+        "name": data["name"],
+        "age": data["age"],
+        "gender": data["gender"],
+        "education": data["education"],
+        "marksheet_url": data["marksheet_url"],
+        "riasec_scores": data["riasec_scores"],
+        "tci_scores": data["tci_scores"]
+    }).execute()
+    return response
 
 
 # =====================================================
@@ -346,22 +366,31 @@ elif choice == "Profile Creation (Hidden)":
     education = st.text_input("Current Class/Grade")
     marksheet = st.file_uploader("Upload Your Marksheet (PDF or Image)", type=["pdf", "png", "jpg", "jpeg"])
 
-    if st.button("Submit Profile"):
-        if not name or not age or not gender or not education or not marksheet:
-            st.error("Please fill all fields and upload marksheet")
-        else:
-            profile_data = {
-                "name": name,
-                "age": age,
-                "gender": gender,
-                "education": education,
-                "marksheet_filename": marksheet.name,
-                "riasec_scores": st.session_state.get("riasec_scores", {}),
-                "tci_scores": st.session_state.get("tci_scores", {})
-            }
-            save_profile_to_db(profile_data)
-            st.success("✅ Profile saved successfully to database!")
-            st.json(profile_data)
+  if st.button("Submit Profile"):
+    if not name or not age or not gender or not education or not marksheet:
+        st.error("Please fill all fields and upload marksheet")
+    else:
+        # Upload marksheet to Supabase Storage
+        marksheet_url = upload_marksheet(marksheet)
+
+        # Prepare data for database
+        data = {
+            "name": name,
+            "age": age,
+            "gender": gender,
+            "education": education,
+            "marksheet_url": marksheet_url,
+            "riasec_scores": st.session_state.get("riasec_scores", {}),
+            "tci_scores": st.session_state.get("tci_scores", {})
+        }
+
+        # Save to Supabase table
+        save_profile_to_supabase(data)
+
+        st.success("Profile saved successfully to Supabase!")
+        st.json(data)
+
+         
 
     if st.button("⬅️ Back to Dashboard"):
         st.session_state.sidebar_choice = "Dashboard"
