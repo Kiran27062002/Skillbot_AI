@@ -3,6 +3,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import auth
 import os
+from supabase import create_client, Client
+
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 
 
 # -------------------- PAGE SETUP --------------------
@@ -229,4 +236,5 @@ elif st.session_state.page == "careers":
 
     if st.button("🏠 Back to Start"):
         restart()
+
 
