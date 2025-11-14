@@ -4,6 +4,12 @@ import plotly.express as px
 import sqlite3
 import json
 import os
+from supabase import create_client, Client
+
+SUPABASE_URL = st.secrets["https://supabase.com/dashboard/project/qbhnfvrqzsmvxggtlxoq/settings/api-keys"]
+SUPABASE_KEY = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiaG5mdnJxenNtdnhnZ3RseG9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMTY4NDUsImV4cCI6MjA3ODY5Mjg0NX0.EQVJqrn5gQy_ofKPY3z8zIR-N8Zv35R9YuJ0xAkXWsA"]
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # =====================================================
 # DATABASE CONNECTION
