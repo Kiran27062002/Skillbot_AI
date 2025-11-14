@@ -4,5 +4,6 @@ plotly
 pytesseract
 pdf2image
 matplotlib
+supabase
 
 
