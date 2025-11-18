@@ -4,8 +4,8 @@ import plotly.express as px
 from supabase import create_client, Client
 
 # -------------------- SUPABASE SETUP --------------------
-SUPABASE_URL = "https://jaztokuyzxettemexcrc.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImphenRva3V5enhldHRlbWV4Y3JjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5NTU4OTMsImV4cCI6MjA3ODUzMTg5M30.I7Q-fAKRqYFzsJoyt7jQD1Vm1eB0sQKo17-ikA5VFBY"  # Replace with your key
+SUPABASE_URL = "https://oyevrxbodltehetyqisn.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95ZXZyeGJvZGx0ZWhldHlxaXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM0NjQwMTQsImV4cCI6MjA3OTA0MDAxNH0.KPtbyyQjpwyPX-DU3R4t7iZ1o_uXVsd6dImYBD9yO6U"  # Replace with your key
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # -------------------- PAGE SETUP --------------------
