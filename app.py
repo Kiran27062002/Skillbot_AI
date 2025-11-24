@@ -7,6 +7,17 @@ from paddleocr import PaddleOCR
 import re
 import io
 
+# Initialize OCR only once
+if "ocr" not in st.session_state:
+    st.session_state.ocr = PaddleOCR(use_angle_cls=True, lang="en")
+
+ocr = st.session_state.ocr
+
+# Example usage:
+# result = ocr.ocr("example.jpg", cls=True)
+# st.write(result)
+
+
 # -------------------- SUPABASE SETUP --------------------
 SUPABASE_URL = "https://jaztokuyzxettemexcrc.supabase.co"
 SUPABASE_KEY = "YOUR_SUPABASE_KEY"
