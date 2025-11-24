@@ -1,10 +1,11 @@
-streamlit
-pandas
-plotly-express
-supabase
-opencv-python-headless==4.7.0.72
-paddleocr
-paddlepaddle
+streamlit==1.28.0
+pandas==2.1.1
+plotly==5.16.1
+Pillow==10.0.0
+paddleocr==2.8.0.1
+paddlepaddle==2.6.2
+supabase==1.2.0
+
 
 
 
