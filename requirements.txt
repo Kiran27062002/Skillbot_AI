@@ -5,5 +5,6 @@ supabase
 opencv-python
 paddleocr
 paddlepaddle
+cv2
 
 
