@@ -2,10 +2,11 @@ streamlit
 pandas
 plotly-express
 supabase
-opencv-python-headless==4.7.0.72
+opencv-python
 paddleocr
 paddlepaddle
 python==3.10
+
 
 
 
