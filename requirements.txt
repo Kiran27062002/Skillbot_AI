@@ -2,6 +2,8 @@ streamlit
 numpy
 Pillow
 supabase
+plotly
+
 
 
 
